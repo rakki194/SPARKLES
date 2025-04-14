@@ -27,7 +27,8 @@ optimizer = SPARKLES(
     centralization=0.5,
     normalization=0.5,
     amp_fac=2.0,
-    stochastic_threshold=1e-6
+    stochastic_threshold=1e-6,
+    permutation_strategy="magnitude"  # Use magnitude-aware permutation
 )
 
 # Training loop (recommended to use BF16 for optimal performance)
@@ -99,20 +100,55 @@ v̂_t = v_t / (1 - β₂ᵗ)
 
 ### 5. Stochastic Update Strategy
 
-Helps escape local minima and saddle points:
+Helps escape local minima and saddle points with multiple permutation strategies:
 
 ```plaintext
 if ||g_t - g_{t-1}|| < threshold:
-    update = R(update)  # Apply stochastic operator R
+    update = R(update)  # Apply stochastic operator R with selected strategy
 ```
+
+Available permutation strategies:
+
+- **Global** (default): Randomly permutes all elements, providing maximum exploration
+- **Magnitude-aware**: Only permutes elements within similar magnitude bands, preserving scale relationships
+- **Local neighborhood**: Permutes elements only within local regions, preserving structural relationships
+- **Adaptive**: Varies permutation strength based on gradient variance, applying more randomization when updates are uniform
 
 Features:
 
 - Detects when gradients become small between iterations
 - Applies a randomized operation to updates to escape potential local minima
 - Controlled by stochastic threshold parameter
+- Intelligently controls permutation aggressiveness based on the selected strategy
 
-## Acknowledgment - Compass Optimizer
+### 6. Stochastic BF16 Rounding
+
+Enhances BF16 precision conversion with controlled randomness (enabled by default):
+
+```plaintext
+# Bit manipulation approach (default)
+random_bits = random_int(0, 2^16 - 1)
+result = ((x_fp32 + random_bits) & 0xFFFF0000) as BF16
+
+# Alternative approach
+x_bf16 = x.to(bf16)
+if random() < probability:
+    x_bf16 += noise  # Controlled noise based on BF16 epsilon
+```
+
+Features:
+
+- Uses bit-level manipulation to achieve true stochastic rounding
+- Adds carefully calibrated randomness during precision conversion
+- Works synergistically with BF16's reduced mantissa precision
+- Helps escape local minima through micro-perturbations
+- Enabled by default for optimal performance
+- Reduces memory usage by 50% compared to FP32 training
+- Prevents stale gradients during long training runs
+
+## Acknowledgments
+
+### Compass Optimizer
 
 SPARKLES draws significant inspiration from the [Compass optimizer](https://github.com/lodestone-rock/compass_optimizer) created by [lodestone-rock](https://github.com/lodestone-rock). The Compass optimizer introduced several innovative concepts that SPARKLES builds upon:
 
@@ -129,7 +165,21 @@ SPARKLES draws significant inspiration from the [Compass optimizer](https://gith
 
 4. **Decoupled Weight Decay**: The approach to separating weight decay from gradient updates in Compass inspired SPARKLES' implementation of weight decay.
 
-The clean, efficient implementation of the Compass optimizer provided an excellent foundation that SPARKLES extends with additional features like stochastic updates and gradient normalization. We're grateful to the Lode for their contributions to optimization research.
+5. **Stochastic BF16 Rounding**: The bit manipulation approach for true stochastic rounding is adapted from lodestone-rock's implementation.
+
+The clean, efficient implementation of the Compass optimizer provided an excellent foundation that SPARKLES extends with additional features like stochastic updates and gradient normalization. We're grateful to Lode for their contributions to optimization research.
+
+### Torchastic
+
+SPARKLES also builds upon concepts from [Torchastic](https://github.com/lodestone-rock/torchastic/), another innovative project by lodestone-rock that focuses on stochastic BF16-based optimization. Key inspirations include:
+
+1. **Memory Efficiency**: Torchastic demonstrated that using BF16 for all operations (parameters, gradients, and optimizer states) can reduce memory consumption by 50% compared to FP32 training, enabling larger models or increased batch sizes within the same memory budget.
+
+2. **Stochastic Rounding to Prevent Stale Gradients**: The stochastic rounding mechanism in SPARKLES is inspired by Torchastic's approach to solving the "stale gradient" problem, where small updates might be lost due to BF16's reduced mantissa precision. Stochastic rounding ensures that even tiny updates have a chance to affect the model parameters.
+
+3. **Bit-Level Manipulation**: The implementation of adding randomness at the bit level (rather than just adding noise after conversion) was inspired by Torchastic's elegant solution.
+
+We extend our thanks for demonstrating how stochastic BF16 training can be both memory-efficient and effective for preventing numerical instabilities during long training runs.
 
 ## Related Work
 
@@ -187,6 +237,14 @@ The momentum amplification technique extends traditional momentum approaches [5]
 | `decouple_weight_decay` | False | Whether to apply weight decay directly to weights |
 | `clip_gradients` | False | Whether to enable gradient clipping |
 | `stochastic_threshold` | 1e-6 | Threshold for applying stochastic updates |
+| `use_stochastic_rounding` | True | Whether to apply stochastic rounding when converting to BF16 |
+| `stochastic_rounding_prob` | 0.5 | Probability of applying noise in stochastic rounding |
+| `stochastic_rounding_magnitude` | None | Magnitude of noise to apply (None = use BF16 epsilon) |
+| `use_bit_manipulation` | True | Whether to use bit manipulation for stochastic rounding |
+| `permutation_strategy` | "global" | Permutation strategy ("global", "magnitude", "local", "adaptive") |
+| `magnitude_bands` | 5 | Number of magnitude bands for magnitude-aware shuffling |
+| `local_neighborhood_size` | 0.1 | Size of local neighborhood as fraction of tensor size |
+| `adaptive_scale_factor` | 1.0 | Scaling factor for adaptive permutation based on gradient variance |
 
 ## Advanced Usage
 
@@ -228,6 +286,54 @@ for epoch in range(num_epochs):
     for data, target in dataloader:
         data = data.to(torch.bfloat16)
         # Rest of training loop
+```
+
+### Stochastic BF16 Rounding Options
+
+```python
+# Disable stochastic rounding (not recommended)
+optimizer = SPARKLES(
+    model.parameters(),
+    lr=1e-3,
+    use_stochastic_rounding=False
+)
+
+# Use noise-based approach instead of bit manipulation
+optimizer = SPARKLES(
+    model.parameters(),
+    lr=1e-3,
+    use_bit_manipulation=False,
+    stochastic_rounding_prob=0.3,  # Lower probability of applying noise
+    stochastic_rounding_magnitude=1e-4  # Custom noise magnitude
+)
+```
+
+### Advanced Permutation Strategies
+
+```python
+# Magnitude-aware shuffling (only permutes elements with similar magnitudes)
+optimizer = SPARKLES(
+    model.parameters(),
+    lr=1e-3,
+    permutation_strategy="magnitude",
+    magnitude_bands=10  # Use more bands for finer granularity
+)
+
+# Local neighborhood shuffling (maintains structural relationships)
+optimizer = SPARKLES(
+    model.parameters(),
+    lr=1e-3,
+    permutation_strategy="local",
+    local_neighborhood_size=0.05  # Smaller local regions
+)
+
+# Adaptive permutation (varies strength based on gradient variance)
+optimizer = SPARKLES(
+    model.parameters(),
+    lr=1e-3,
+    permutation_strategy="adaptive",
+    adaptive_scale_factor=2.0  # More aggressive scaling
+)
 ```
 
 ## License
