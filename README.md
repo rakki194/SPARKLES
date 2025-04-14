@@ -129,7 +129,7 @@ SPARKLES draws significant inspiration from the [Compass optimizer](https://gith
 
 4. **Decoupled Weight Decay**: The approach to separating weight decay from gradient updates in Compass inspired SPARKLES' implementation of weight decay.
 
-The clean, efficient implementation of the Compass optimizer provided an excellent foundation that SPARKLES extends with additional features like stochastic updates and gradient normalization. We're grateful to the lodestone-rock team for their contributions to optimization research.
+The clean, efficient implementation of the Compass optimizer provided an excellent foundation that SPARKLES extends with additional features like stochastic updates and gradient normalization. We're grateful to the Lode for their contributions to optimization research.
 
 ## Related Work
 
