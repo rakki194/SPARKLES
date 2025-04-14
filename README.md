@@ -6,6 +6,10 @@ A powerful and adaptive optimization algorithm that combines several advanced te
 
 SPARKLES (**S**tochastic **P**arameter **A**djustment with **R**andomized **K**ick for **L**earning **E**nhancement **S**trategy) is an optimization algorithm that integrates multiple state-of-the-art optimization techniques, including gradient centralization, adaptive normalization, momentum amplification, adaptive step sizing, and stochastic updates. It's designed to provide faster convergence, improved stability, and better generalization in deep learning tasks.
 
+**IMPORTANT**: SPARKLES is specifically designed to work with bfloat16 (BF16) precision. Using full BF16 format for both model weights and input data is essential for optimal performance. Without BF16 precision, the optimizer's performance will be significantly degraded.
+
+BF16's numerical properties create the ideal balance for SPARKLES' stochastic operations. The reduced mantissa precision creates a beneficial noise floor that works synergistically with the randomized gradient updates, helping escape local minima while maintaining training stability. The optimizer's normalization and centralization techniques were specifically calibrated for BF16's characteristics and don't function correctly with other precision formats.
+
 ## Quick Start
 
 ```python
