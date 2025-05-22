@@ -192,8 +192,11 @@ class SPARKLES(Optimizer):
         """
         size: int = x.dim()
         if size > 1 and use_channels:
-            s = x.std(dim=tuple(range(1, size)), keepdim=True).add_(epsilon)
-            x.lerp_(x.div_(s), weight=alpha)
+            reduce_dims = tuple(range(1, size))
+            # Only normalize if all reduction dims have more than 1 element
+            if all(x.size(d) > 1 for d in reduce_dims):
+                s = x.std(dim=reduce_dims, keepdim=True).add_(epsilon)
+                x.lerp_(x.div_(s), weight=alpha)
         elif torch.numel(x) > 2:
             s = x.std().add_(epsilon)
             x.lerp_(x.div_(s), weight=alpha)
